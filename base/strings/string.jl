@@ -60,7 +60,35 @@ This representation is often appropriate for passing strings to C.
 String(s::AbstractString) = print_to_string(s)
 String(s::Symbol) = unsafe_string(unsafe_convert(Ptr{UInt8}, s))
 
-(::Type{Vector{UInt8}})(s::String) = ccall(:jl_string_to_array, Ref{Vector{UInt8}}, (Any,), s)
+unsafe_wrap(::Type{Vector{UInt8}}, s::String) = ccall(:jl_string_to_array, Ref{Vector{UInt8}}, (Any,), s)
+
+"""
+    StringBytes(s::String)
+
+Wrap a `String` (without copying) in an immutable vector-like object that accesses the bytes
+of the string's representation.
+"""
+struct StringBytes <: DenseVector{UInt8}
+    s::String
+end
+
+sizeof(s::StringBytes) = sizeof(s.s)
+length(s::StringBytes) = sizeof(s.s)
+size(s::StringBytes) = (length(s),)
+@propagate_inbounds getindex(s::StringBytes, i::Int) = codeunit(s.s, i)
+IndexStyle(::Type{StringBytes}) = IndexLinear()
+start(s::StringBytes) = 1
+next(s::StringBytes, i) = (@_propagate_inbounds_meta; (s[i], i+1))
+done(s::StringBytes, i) = (@_inline_meta; i == length(s)+1)
+
+(::Type{Vector{UInt8}})(s::StringBytes) = copyto!(Vector{UInt8}(uninitialized, length(s)), s)
+
+unsafe_convert(::Type{Ptr{UInt8}}, s::StringBytes) = unsafe_convert(Ptr{UInt8}, s.s)
+unsafe_convert(::Type{Ptr{Int8}}, s::StringBytes) = unsafe_convert(Ptr{Int8}, s.s)
+
+write(io::IO, s::StringBytes) = write(io, s.s)
+
+String(s::StringBytes) = s.s
 
 ## low-level functions ##
 
